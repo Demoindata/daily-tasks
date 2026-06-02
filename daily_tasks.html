@@ -997,81 +997,7 @@ function upgradeTask(t) {
   };
 }
 
-function loadState() {
-  // Permanent tasks
-  const raw = localStorage.getItem(STK_TASKS);
-  if (raw) {
-    try { tasks = JSON.parse(raw).map(upgradeTask); } catch(e) { tasks = []; }
-  } else {
-    const params = new URLSearchParams(window.location.search);
-    const dp = params.get('data');
-    if (dp) {
-      try {
-        const b = dp.replace(/-/g,'+').replace(/_/g,'/');
-        const d = JSON.parse(atob(b));
-        if (Array.isArray(d) && d.length) tasks = d.map(upgradeTask);
-      } catch(e) {}
-    }
-    if (!tasks.length) tasks = DEFAULT_TASKS.map(t=>({...t}));
-    localStorage.setItem(STK_TASKS, JSON.stringify(tasks));
-  }
-
-  // Completions
-  const cr = localStorage.getItem(STK_COMPLETIONS);
-  if (cr) { try { completions = JSON.parse(cr); } catch(e) { completions = {}; } }
-  else {
-    const params = new URLSearchParams(window.location.search);
-    const cp = params.get('completions');
-    if (cp) {
-      try { const b=cp.replace(/-/g,'+').replace(/_/g,'/'); completions=JSON.parse(atob(b)); }
-      catch(e) { completions={}; }
-    }
-    localStorage.setItem(STK_COMPLETIONS, JSON.stringify(completions));
-  }
-
-  // Temp tasks
-  const tr = localStorage.getItem(STK_TEMP_TASKS);
-  if (tr) { try { tempTasks = JSON.parse(tr); } catch(e) { tempTasks = {}; } }
-  else { tempTasks = {}; }
-
-  // Categories
-  const catRaw = localStorage.getItem(STK_CATEGORIES);
-  if (catRaw) { try { categories=JSON.parse(catRaw); } catch(e) { categories=[...DEFAULT_CATEGORIES]; } }
-  else { categories = [...DEFAULT_CATEGORIES]; localStorage.setItem(STK_CATEGORIES, JSON.stringify(categories)); }
-
-  // Settings
-  const setRaw = localStorage.getItem(STK_SETTINGS);
-  if (setRaw) { try { settings=JSON.parse(setRaw); } catch(e) { settings={...DEFAULT_SETTINGS}; } }
-  else { settings={...DEFAULT_SETTINGS}; localStorage.setItem(STK_SETTINGS, JSON.stringify(settings)); }
-
-  // ── Theme migration: force old dark→light ──
-  if (!settings._v) {
-    settings.theme = 'light';
-    settings._v = 2;
-    localStorage.setItem(STK_SETTINGS, JSON.stringify(settings));
-  }
-
-  // Today's saved
-  savedDone = new Set(completions[TODAY_STR]||[]);
-
-  // Apply theme
-  if (settings.theme==='light') {
-    document.documentElement.setAttribute('data-theme','light');
-    elThemeToggle.classList.remove('on');
-  } else {
-    document.documentElement.setAttribute('data-theme','dark');
-    elThemeToggle.classList.add('on');
-  }
-
-  // Clean migration URL
-  try {
-    const u = new URL(window.location);
-    if (u.searchParams.has('data')||u.searchParams.has('completions')) {
-      u.searchParams.delete('data'); u.searchParams.delete('completions');
-      window.history.replaceState({},'',u);
-    }
-  } catch(e) {}
-}
+// (State loading moved inline into the async boot() at bottom)
 
 function saveTasks() { localStorage.setItem(STK_TASKS, JSON.stringify(tasks)); syncState(); }
 function saveCompletions() { localStorage.setItem(STK_COMPLETIONS, JSON.stringify(completions)); syncState(); }
@@ -1119,25 +1045,6 @@ function updateSyncStatus() {
   }
   el.innerHTML = _syncOk ? '☁️ 已同步到工作区' : '⚠️ 同步失败';
   el.style.color = _syncOk ? 'var(--success)' : 'var(--danger)';
-}
-
-async function initAPI() {
-  const data = await tryFetchAPI();
-  if (!data) return;
-  let changed = false;
-  if (data.tasks) { tasks = data.tasks.map(upgradeTask); changed = true; }
-  if (data.completions) { completions = data.completions; changed = true; }
-  if (data.tempTasks) { tempTasks = data.tempTasks; changed = true; }
-  if (data.categories) { categories = data.categories; changed = true; }
-  if (data.settings) { settings = { ...DEFAULT_SETTINGS, ...data.settings }; changed = true; }
-  if (changed) {
-    saveTasks(); saveCompletions(); saveTempTasks(); saveCategories(); saveSettings();
-    savedDone = new Set(completions[TODAY_STR]||[]);
-    pending.clear();
-    renderToday(); renderManage(); renderSettings();
-    if (document.querySelector('#tab-history.active')) renderHistory();
-    if (document.querySelector('#tab-stats.active')) renderStats();
-  }
 }
 
 /* ═══════════════════════ TODAY HELPERS ═══════════════════════ */
@@ -1996,29 +1903,117 @@ elBtnMax.addEventListener('click', () => {
 });
 elBtnClose.addEventListener('click', () => window.close());
 
-/* ═══════════════════════ INIT ═══════════════════════ */
-updateDate();
-loadState();
-renderToday();
-renderSettings();
-initAPI();
+/* ═══════════════════════ INIT (async) ═══════════════════════ */
+(async function boot() {
 
-// Clean old completions (>90 days)
-const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-90);
-const cutoffStr = dateKey(cutoff);
-let cleaned = false;
-for (const k of Object.keys(completions)) {
-  if (k<cutoffStr) { delete completions[k]; cleaned=true; }
-}
-if (cleaned) saveCompletions();
+  // Try API first when running in server mode
+  if (API_BASE) {
+    const data = await tryFetchAPI();
+    if (data) {
+      if (data.tasks) tasks = data.tasks.map(upgradeTask);
+      if (data.completions) completions = data.completions;
+      if (data.tempTasks) tempTasks = data.tempTasks;
+      if (data.categories) categories = data.categories;
+      if (data.settings) settings = { ...DEFAULT_SETTINGS, ...data.settings };
+      // Cache to localStorage
+      localStorage.setItem(STK_TASKS, JSON.stringify(tasks));
+      localStorage.setItem(STK_COMPLETIONS, JSON.stringify(completions));
+      localStorage.setItem(STK_TEMP_TASKS, JSON.stringify(tempTasks));
+      localStorage.setItem(STK_CATEGORIES, JSON.stringify(categories));
+      localStorage.setItem(STK_SETTINGS, JSON.stringify(settings));
+    }
+  }
 
-// Clean old temp tasks (>90 days)
-for (const k of Object.keys(tempTasks)) {
-  if (k<cutoffStr) { delete tempTasks[k]; cleaned=true; }
-}
-if (cleaned) saveTempTasks();
+  // Fallback: load whatever wasn't set by API from localStorage / defaults
+  // (Only loads keys still missing)
+  if (!tasks.length) {
+    const raw = localStorage.getItem(STK_TASKS);
+    if (raw) { try { tasks = JSON.parse(raw).map(upgradeTask); } catch(e) {} }
+  }
+  if (!tasks.length) {
+    tasks = DEFAULT_TASKS.map(t=>({...t}));
+    localStorage.setItem(STK_TASKS, JSON.stringify(tasks));
+  }
 
-})();
+  if (!Object.keys(completions).length) {
+    const cr = localStorage.getItem(STK_COMPLETIONS);
+    if (cr) { try { completions = JSON.parse(cr); } catch(e) {} }
+    if (!Object.keys(completions).length) {
+      completions = {};
+      localStorage.setItem(STK_COMPLETIONS, JSON.stringify(completions));
+    }
+  }
+
+  if (!Object.keys(tempTasks).length) {
+    const tr = localStorage.getItem(STK_TEMP_TASKS);
+    if (tr) { try { tempTasks = JSON.parse(tr); } catch(e) {} }
+    if (!Object.keys(tempTasks).length) tempTasks = {};
+  }
+
+  if (!categories.length) {
+    const catRaw = localStorage.getItem(STK_CATEGORIES);
+    if (catRaw) { try { categories = JSON.parse(catRaw); } catch(e) {} }
+    if (!categories.length) {
+      categories = [...DEFAULT_CATEGORIES];
+      localStorage.setItem(STK_CATEGORIES, JSON.stringify(categories));
+    }
+  }
+
+  if (!Object.keys(settings).length) {
+    const setRaw = localStorage.getItem(STK_SETTINGS);
+    if (setRaw) { try { settings = JSON.parse(setRaw); } catch(e) { settings={...DEFAULT_SETTINGS}; } }
+    else { settings={...DEFAULT_SETTINGS}; localStorage.setItem(STK_SETTINGS, JSON.stringify(settings)); }
+  }
+
+  // ── Theme migration ──
+  if (!settings._v) {
+    settings.theme = 'light';
+    settings._v = 2;
+    localStorage.setItem(STK_SETTINGS, JSON.stringify(settings));
+  }
+
+  // Apply theme
+  if (settings.theme==='light') {
+    document.documentElement.setAttribute('data-theme','light');
+    elThemeToggle.classList.remove('on');
+  } else {
+    document.documentElement.setAttribute('data-theme','dark');
+    elThemeToggle.classList.add('on');
+  }
+
+  // Today's saved state
+  savedDone = new Set(completions[TODAY_STR]||[]);
+
+  // Update date display (safe now — settings loaded)
+  updateDate();
+
+  // Render
+  renderToday();
+  renderSettings();
+
+  // Clean old data
+  const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-90);
+  const cutoffStr = dateKey(cutoff);
+  let cleaned = false;
+  for (const k of Object.keys(completions)) {
+    if (k<cutoffStr) { delete completions[k]; cleaned=true; }
+  }
+  if (cleaned) saveCompletions();
+  for (const k of Object.keys(tempTasks)) {
+    if (k<cutoffStr) { delete tempTasks[k]; cleaned=true; }
+  }
+  if (cleaned) saveTempTasks();
+
+  // Clean migration URL
+  try {
+    const u = new URL(window.location);
+    if (u.searchParams.has('data')||u.searchParams.has('completions')) {
+      u.searchParams.delete('data'); u.searchParams.delete('completions');
+      window.history.replaceState({},'',u);
+    }
+  } catch(e) {}
+})();  // boot
+})();  // outer IIFE
 </script>
 </body>
 </html>
