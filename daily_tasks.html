@@ -192,7 +192,7 @@ html, body {
 /* ── task list ── */
 #task-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; min-height: 50px; }
 .task-item {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
   padding: 12px 16px; background: var(--card);
   border: 1px solid var(--border); border-radius: var(--radius);
   transition: background .15s, border-color .2s, opacity .25s, box-shadow .2s;
@@ -211,7 +211,7 @@ html, body {
 
 /* temp task item */
 .temp-task-item {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
   padding: 10px 16px; background: var(--card);
   border: 1px dashed var(--border); border-radius: var(--radius);
   transition: background .15s, border-color .2s, opacity .25s, box-shadow .2s;
@@ -228,6 +228,7 @@ html, body {
   background: rgba(255,159,10,.15); color: #ff9f0a;
   font-weight: 500; letter-spacing: .2px;
 }
+.temp-task-item:hover .task-actions { opacity: 1; }
 .temp-task-item .task-btn.del { opacity: .5; }
 .temp-task-item:hover .task-btn.del { opacity: 1; }
 
@@ -272,6 +273,49 @@ html, body {
 .task-btn.edit:hover { color: var(--accent); }
 .task-btn.del:hover { color: var(--danger); background: var(--danger-bg); }
 .task-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* show note indicator always when task has a note */
+.task-item.has-note .task-btn.note,
+.temp-task-item.has-note .task-btn.note { opacity: 1; color: var(--accent); }
+.task-btn.note:hover { color: var(--accent); }
+
+/* ── note area for today's tasks ── */
+.task-note-area {
+  display: none; width: 100%;
+  padding: 2px 16px 6px 52px;
+}
+.task-note-area.open { display: block; }
+.task-note-area textarea {
+  width: 100%; min-height: 36px; padding: 6px 10px;
+  background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 12px;
+  font-family: var(--font); outline: none; resize: vertical;
+  transition: border-color .2s;
+}
+.task-note-area textarea:focus { border-color: var(--accent); }
+
+.note-input-row {
+  display: flex; gap: 6px; align-items: flex-start;
+}
+.note-input-row textarea { flex: 1; min-height: 36px; }
+.note-save-btn {
+  flex-shrink: 0; height: 36px; padding: 0 12px;
+  background: var(--accent); border: none; border-radius: var(--radius-sm);
+  color: #0a0e14; font-size: 12px; font-weight: 500;
+  font-family: var(--font); cursor: pointer;
+  transition: opacity .15s, transform .12s;
+  white-space: nowrap; display: flex; align-items: center; gap: 4px;
+}
+.note-save-btn:hover { opacity: .85; }
+.note-save-btn:active { transform: scale(.95); }
+.note-save-btn.saved { background: var(--success); pointer-events: none; }
+
+/* ── history note display ── */
+.hist-note {
+  display: block; padding: 2px 14px 6px 52px; font-size: 12px;
+  color: var(--text-sec); line-height: 1.5; font-style: italic;
+}
+.hist-note::before { content: '💬 '; }
 
 #empty-state {
   text-align: center; padding: 48px 24px; color: var(--text-dim); display: none;
@@ -480,6 +524,16 @@ html, body {
 .manage-action-btn.archive:hover { color: var(--accent2); }
 .manage-action-btn.archive.on { color: var(--success); opacity: 1; }
 .manage-action-btn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+.manage-start {
+  font-size: 11px; padding: 0 8px; height: 24px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--bg); color: var(--text-sec);
+  font-family: var(--font); outline: none; cursor: pointer; width: 106px;
+  transition: border-color .15s;
+  color-scheme: light;
+}
+[data-theme="dark"] .manage-start { color-scheme: dark; }
+.manage-start:hover, .manage-start:focus { border-color: var(--accent); }
 
 .manage-note {
   display: none; padding: 4px 12px 8px 48px; font-size: 12px; color: var(--text-sec);
@@ -713,6 +767,15 @@ html, body {
         <label style="font-size:13px;color:var(--text-sec);">选择日期</label>
         <input type="date" id="hist-date">
       </div>
+      <div class="hist-controls" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);flex-wrap:wrap">
+        <label style="font-size:13px;color:var(--text-sec);">导出区间</label>
+        <input type="date" id="export-start">
+        <span style="color:var(--text-dim)">至</span>
+        <input type="date" id="export-end">
+        <button class="btn-secondary" id="export-range-btn" style="background:var(--accent);border-color:var(--accent);color:#0a0e14;font-weight:500">
+          📥 导出 CSV
+        </button>
+      </div>
       <div id="hist-summary" class="hist-summary"></div>
       <div id="hist-list" class="hist-list"></div>
       <div class="month-nav">
@@ -883,14 +946,15 @@ const STK_COMPLETIONS = 'dt_completions';
 const STK_TEMP_TASKS = 'dt_temp_tasks';
 const STK_CATEGORIES = 'dt_categories';
 const STK_SETTINGS = 'dt_settings';
+const STK_NOTES = 'dt_notes';
 const WEEKDAYS = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
 
 const DEFAULT_TASKS = [
-  { id:1, text:'检查12345工单数据是否正常更新', note:'', category:'工作', sortOrder:1, archived:false, createdAt:'' },
-  { id:2, text:'研判中台事项是否正常',           note:'', category:'工作', sortOrder:2, archived:false, createdAt:'' },
-  { id:3, text:'OA大模型是否正常',               note:'', category:'工作', sortOrder:3, archived:false, createdAt:'' },
-  { id:4, text:'大模型平台调用是否正常',         note:'', category:'工作', sortOrder:4, archived:false, createdAt:'' },
-  { id:5, text:'AI事件流转是否正常',             note:'', category:'工作', sortOrder:5, archived:false, createdAt:'' }
+  { id:1, text:'检查12345工单数据是否正常更新', note:'', category:'工作', sortOrder:1, archived:false, deleted:false, startDate:'', endDate:'', createdAt:'' },
+  { id:2, text:'研判中台事项是否正常',           note:'', category:'工作', sortOrder:2, archived:false, deleted:false, startDate:'', endDate:'', createdAt:'' },
+  { id:3, text:'OA大模型是否正常',               note:'', category:'工作', sortOrder:3, archived:false, deleted:false, startDate:'', endDate:'', createdAt:'' },
+  { id:4, text:'大模型平台调用是否正常',         note:'', category:'工作', sortOrder:4, archived:false, deleted:false, startDate:'', endDate:'', createdAt:'' },
+  { id:5, text:'AI事件流转是否正常',             note:'', category:'工作', sortOrder:5, archived:false, deleted:false, startDate:'', endDate:'', createdAt:'' }
 ];
 const DEFAULT_CATEGORIES = ['工作','运维','学习','个人','其他'];
 const DEFAULT_SETTINGS = { theme:'light', workdays:[1,2,3,4,5] };
@@ -903,6 +967,7 @@ const API_BASE = IS_SERVER ? window.location.origin : null;
 let tasks = [];
 let completions = {};
 let tempTasks = {};     // { 'YYYY-MM-DD': [{ id:'t1', text, done }, ...] }
+let notes = {};         // { 'YYYY-MM-DD': { taskId: 'note text', ... } }
 let categories = [];
 let settings = {};
 let savedDone = new Set();
@@ -1000,7 +1065,8 @@ function upgradeTask(t) {
     id:t.id, text:t.text,
     note:t.note||'', category:t.category||'工作',
     sortOrder:t.sortOrder!==undefined ? t.sortOrder : t.id,
-    archived:t.archived||false,
+    archived:t.archived||false, deleted:t.deleted||false,
+    startDate:t.startDate||'', endDate:t.endDate||'',
     createdAt:t.createdAt||''
   };
 }
@@ -1012,6 +1078,7 @@ function saveCompletions() { localStorage.setItem(STK_COMPLETIONS, JSON.stringif
 function saveTempTasks() { localStorage.setItem(STK_TEMP_TASKS, JSON.stringify(tempTasks)); syncState(); }
 function saveCategories() { localStorage.setItem(STK_CATEGORIES, JSON.stringify(categories)); syncState(); }
 function saveSettings() { localStorage.setItem(STK_SETTINGS, JSON.stringify(settings)); syncState(); }
+function saveNotes() { localStorage.setItem(STK_NOTES, JSON.stringify(notes)); syncState(); }
 
 /* ── API sync (workspace persistence) ── */
 let _syncTimer = null;
@@ -1024,7 +1091,7 @@ function syncState() {
       const r = await fetch(`${API_BASE}/api/data`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tasks, completions, tempTasks, categories, settings })
+        body: JSON.stringify({ tasks, completions, tempTasks, notes, categories, settings })
       });
       _syncOk = r.ok;
     } catch(e) { _syncOk = false; }
@@ -1060,7 +1127,7 @@ function isDone(tid) { return pending.has(tid) ? pending.get(tid) : savedDone.ha
 
 function hasChanges() {
   for (const t of tasks) {
-    if (t.archived) continue;
+    if (t.archived || t.deleted) continue;
     const disk = savedDone.has(t.id);
     const cur = pending.has(t.id) ? pending.get(t.id) : disk;
     if (cur !== disk) return true;
@@ -1070,11 +1137,18 @@ function hasChanges() {
 
 function permDoneCount() {
   let n=0;
-  for (const t of tasks) { if (!t.archived && isDone(t.id)) n++; }
+  for (const t of tasks) { if (!t.archived && !t.deleted && isDone(t.id)) n++; }
   return n;
 }
 
-function activeTasks() { return tasks.filter(t=>!t.archived).sort((a,b)=>a.sortOrder-b.sortOrder); }
+function activeTasks() {
+  return tasks.filter(t => {
+    if (t.archived || t.deleted) return false;
+    if (t.startDate && t.startDate > TODAY_STR) return false;
+    if (t.endDate && t.endDate < TODAY_STR) return false;
+    return true;
+  }).sort((a,b)=>a.sortOrder-b.sortOrder);
+}
 
 function getTodayTempTasks() { return (tempTasks[TODAY_STR]||[]); }
 
@@ -1109,7 +1183,9 @@ function renderToday() {
     html += `<div class="section-header">📋 日常任务 <span class="count">${pd}/${at.length}</span></div>`;
     for (const t of at) {
       const done = isDone(t.id);
-      html += `<div class="task-item${done?' done':''}" data-id="${t.id}">
+      const todayNote = (notes[TODAY_STR]||{})[t.id] || '';
+      const hasNote = !!todayNote;
+      html += `<div class="task-item${done?' done':''}${hasNote?' has-note':''}" data-id="${t.id}">
         <label class="cb">
           <input type="checkbox"${done?' checked':''}>
           <span class="cb-check"><svg viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3"/></svg></span>
@@ -1117,12 +1193,21 @@ function renderToday() {
         ${t.category?`<span class="cat-badge">${escHtml(t.category)}</span>`:''}
         <span class="task-text" title="${escHtml(t.text)}">${escHtml(t.text)}</span>
         <div class="task-actions">
+          <button class="task-btn note" data-id="${t.id}" title="备注">
+            <svg viewBox="0 0 16 16"><path d="M4 12l-1 3 3-1 7-7-2-2-7 7z"/><path d="M10 4l2 2"/></svg>
+          </button>
           <button class="task-btn edit" data-id="${t.id}" title="编辑">
             <svg viewBox="0 0 16 16"><path d="M11 2l3 3-7 7H4v-3l7-7z"/></svg>
           </button>
           <button class="task-btn del" data-id="${t.id}" title="删除">
             <svg viewBox="0 0 16 16"><polyline points="3,6 13,6"/><path d="M5 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M4 6l1 7h6l1-7"/></svg>
           </button>
+        </div>
+        <div class="task-note-area" data-id="${t.id}">
+          <div class="note-input-row">
+            <textarea placeholder="未完成的原因或备注..." data-id="${t.id}">${escHtml(todayNote)}</textarea>
+            <button class="note-save-btn" data-id="${t.id}">保存</button>
+          </div>
         </div>
       </div>`;
     }
@@ -1133,7 +1218,8 @@ function renderToday() {
     const td = tempDoneCount();
     html += `<div class="section-header">📌 今日临时 <span class="count">${td}/${tt.length}</span></div>`;
     for (const t of tt) {
-      html += `<div class="temp-task-item${t.done?' done':''}" data-temp-id="${t.id}">
+      const tempNote = (notes[TODAY_STR]||{})[t.id] || '';
+      html += `<div class="temp-task-item${t.done?' done':''}${tempNote?' has-note':''}" data-temp-id="${t.id}">
         <label class="cb">
           <input type="checkbox"${t.done?' checked':''}>
           <span class="cb-check"><svg viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3"/></svg></span>
@@ -1141,9 +1227,18 @@ function renderToday() {
         <span class="temp-badge">临时</span>
         <span class="task-text" title="${escHtml(t.text)}">${escHtml(t.text)}</span>
         <div class="task-actions">
+          <button class="task-btn note" data-id="${t.id}" title="备注">
+            <svg viewBox="0 0 16 16"><path d="M4 12l-1 3 3-1 7-7-2-2-7 7z"/><path d="M10 4l2 2"/></svg>
+          </button>
           <button class="task-btn del" data-temp-id="${t.id}" title="删除">
             <svg viewBox="0 0 16 16"><polyline points="3,6 13,6"/><path d="M5 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><path d="M4 6l1 7h6l1-7"/></svg>
           </button>
+        </div>
+        <div class="task-note-area" data-id="${t.id}">
+          <div class="note-input-row">
+            <textarea placeholder="备注..." data-id="${t.id}">${escHtml(tempNote)}</textarea>
+            <button class="note-save-btn" data-id="${t.id}">保存</button>
+          </div>
         </div>
       </div>`;
     }
@@ -1194,7 +1289,8 @@ function addPermTask() {
   const maxSort = tasks.reduce((m,t)=>t.sortOrder>m?t.sortOrder:m, 0);
   tasks.push({
     id: maxId+1, text, note:'', category: categories[0]||'工作',
-    sortOrder: maxSort+1, archived: false, createdAt: ''
+    sortOrder: maxSort+1, archived: false, deleted: false,
+    startDate: TODAY_STR, endDate: '', createdAt: ''
   });
   saveTasks();
   input.value = '';
@@ -1214,9 +1310,10 @@ function deletePermTask(tid) {
   } else { doDeletePerm(tid); }
 }
 function doDeletePerm(tid) {
-  tasks = tasks.filter(x=>x.id!==tid);
+  const t = tasks.find(x=>x.id===tid);
+  if (t) { t.deleted = true; }
   pending.delete(tid); savedDone.delete(tid);
-  saveTasks(); renderToday();
+  saveTasks(); renderToday(); renderManage();
 }
 
 function addTempTask() {
@@ -1334,7 +1431,11 @@ function renderHistory() {
 function renderDayView(dt) {
   const date = parseDate(dt);
   const comps = completions[dt]||[];
-  const at = tasks.filter(t=>!t.archived).sort((a,b)=>a.sortOrder-b.sortOrder);
+  const at = tasks.filter(t => {
+    if (t.startDate && t.startDate > dt) return false;
+    if (t.endDate && t.endDate < dt) return false;
+    return true;
+  }).sort((a,b)=>a.sortOrder-b.sortOrder);
   const doneIds = new Set(comps);
   const permDoneN = at.filter(t=>doneIds.has(t.id)).length;
 
@@ -1356,11 +1457,13 @@ function renderDayView(dt) {
     html += `<div class="section-header">📋 日常任务 <span class="count">${permDoneN}/${at.length}</span></div>`;
     for (const t of at) {
       const done = doneIds.has(t.id);
+      const n = (notes[dt]||{})[t.id];
       html += `<div class="hist-item${done?' done':''}">
         <span class="hist-dot"></span>
         ${t.category?`<span class="cat-badge">${escHtml(t.category)}</span>`:''}
         <span class="task-text">${escHtml(t.text)}</span>
       </div>`;
+      if (n) html += `<div class="hist-note">${escHtml(n)}</div>`;
     }
   }
 
@@ -1368,11 +1471,13 @@ function renderDayView(dt) {
   if (dayTemp.length) {
     html += `<div class="section-header">📌 临时任务 <span class="count">${tempDoneN}/${dayTemp.length}</span></div>`;
     for (const t of dayTemp) {
+      const n = (notes[dt]||{})[t.id];
       html += `<div class="hist-item${t.done?' done':''}">
         <span class="hist-dot"></span>
         <span class="temp-badge">临时</span>
         <span class="task-text">${escHtml(t.text)}</span>
       </div>`;
+      if (n) html += `<div class="hist-note">${escHtml(n)}</div>`;
     }
   }
 
@@ -1552,7 +1657,7 @@ function renderStats() {
 
 /* ═══════════════════════ MANAGE ═══════════════════════ */
 function renderManage() {
-  const sorted = [...tasks].sort((a,b)=>a.sortOrder-b.sortOrder);
+  const sorted = tasks.filter(t=>!t.deleted).sort((a,b)=>a.sortOrder-b.sortOrder);
   let html = '';
   for (let i=0; i<sorted.length; i++) {
     const t = sorted[i];
@@ -1567,6 +1672,9 @@ function renderManage() {
       <select class="manage-cat" data-id="${t.id}">
         ${categories.map(c=>`<option value="${escHtml(c)}"${t.category===c?' selected':''}>${escHtml(c)}</option>`).join('')}
       </select>
+      <input type="date" class="manage-start" data-id="${t.id}" value="${t.startDate||''}" title="起始日期">
+      <span style="color:var(--text-dim);font-size:11px;flex-shrink:0">→</span>
+      <input type="date" class="manage-start" data-id="${t.id}" value="${t.endDate||''}" title="结束日期(空=长期)" data-end="1">
       <button class="manage-action-btn note" data-id="${t.id}" title="备注">
         <svg viewBox="0 0 16 16"><path d="M4 12l-1 3 3-1 7-7-2-2-7 7z"/><path d="M10 4l2 2"/></svg>
       </button>
@@ -1650,6 +1758,21 @@ elTaskList.addEventListener('click', e => {
   // Permanent: edit
   const editBtn = e.target.closest('.task-btn.edit');
   if (editBtn) { startEdit(parseInt(editBtn.dataset.id)); return; }
+  // Note toggle (permanent & temp)
+  const noteBtn = e.target.closest('.task-btn.note');
+  if (noteBtn) {
+    const id = noteBtn.dataset.id;
+    const noteArea = document.querySelector(`.task-item[data-id="${id}"] .task-note-area`)
+                  || document.querySelector(`.temp-task-item[data-temp-id="${id}"] .task-note-area`);
+    if (noteArea) {
+      noteArea.classList.toggle('open');
+      if (noteArea.classList.contains('open')) {
+        const ta = noteArea.querySelector('textarea');
+        if (ta) ta.focus();
+      }
+    }
+    return;
+  }
   // Permanent: delete
   const delBtn = e.target.closest('.task-item .task-btn.del');
   if (delBtn) { deletePermTask(parseInt(delBtn.dataset.id)); return; }
@@ -1669,6 +1792,28 @@ elTaskList.addEventListener('click', e => {
 // ── Today: add temp task ──
 elAddBtn.addEventListener('click', addTempTask);
 elNewInput.addEventListener('keydown', e => { if (e.key==='Enter') addTempTask(); });
+
+// ── Today: note save button ──
+elTaskList.addEventListener('click', e => {
+  const btn = e.target.closest('.note-save-btn');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const ta = document.querySelector(`.task-note-area[data-id="${id}"] textarea`);
+  if (!ta) return;
+  if (!notes[TODAY_STR]) notes[TODAY_STR] = {};
+  notes[TODAY_STR][id] = ta.value;
+  saveNotes();
+  // Visual feedback
+  btn.textContent = '已保存';
+  btn.classList.add('saved');
+  setTimeout(() => { btn.textContent = '保存'; btn.classList.remove('saved'); }, 1500);
+  // Update has-note class on either .task-item or .temp-task-item
+  const item = document.querySelector(`.task-item[data-id="${id}"]`) || document.querySelector(`.temp-task-item[data-temp-id="${id}"]`);
+  if (item) {
+    if (ta.value) item.classList.add('has-note');
+    else item.classList.remove('has-note');
+  }
+});
 
 // ── Today: save ──
 elSaveBtn.addEventListener('click', doSave);
@@ -1762,10 +1907,22 @@ elManageList.addEventListener('click', e => {
 
 elManageList.addEventListener('change', e => {
   const sel = e.target.closest('.manage-cat');
-  if (!sel) return;
-  const id = parseInt(sel.dataset.id);
-  const t = tasks.find(x=>x.id===id);
-  if (t) { t.category=sel.value; saveTasks(); renderToday(); }
+  if (sel) {
+    const id = parseInt(sel.dataset.id);
+    const t = tasks.find(x=>x.id===id);
+    if (t) { t.category=sel.value; saveTasks(); renderToday(); }
+    return;
+  }
+  const dateInput = e.target.closest('.manage-start');
+  if (dateInput) {
+    const id = parseInt(dateInput.dataset.id);
+    const t = tasks.find(x=>x.id===id);
+    if (t) {
+      if (dateInput.dataset.end) t.endDate = dateInput.value;
+      else t.startDate = dateInput.value;
+      saveTasks(); renderToday();
+    }
+  }
 });
 
 elManageList.addEventListener('input', e => {
@@ -1828,7 +1985,7 @@ document.getElementById('settings-save-btn')?.addEventListener('click', () => {
 // ── Settings: export ──
 elExportBtn.addEventListener('click', () => {
   const data = {
-    tasks, completions, tempTasks, categories, settings,
+    tasks, completions, tempTasks, notes, categories, settings,
     exportedAt: new Date().toISOString()
   };
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
@@ -1839,6 +1996,63 @@ elExportBtn.addEventListener('click', () => {
   URL.revokeObjectURL(url);
   showToast('数据已导出');
 });
+
+// ── History: date-range CSV export ──
+function exportDateRangeCSV() {
+  const startStr = document.getElementById('export-start').value;
+  const endStr = document.getElementById('export-end').value;
+  if (!startStr || !endStr) { showToast('请选择导出起止日期'); return; }
+  if (startStr > endStr) { showToast('开始日期不能晚于结束日期'); return; }
+
+  const WEEKDAYS_FULL = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+  const at = [...tasks].sort((a,b)=>a.sortOrder-b.sortOrder);
+  const rows = [];
+
+  // Header row
+  rows.push(['日期','星期','类型','任务','分类','状态','备注'].join(','));
+
+  let current = new Date(startStr);
+  const end = new Date(endStr);
+  while (current <= end) {
+    const ds = dateKey(current);
+    const dow = current.getDay();
+    const dowLabel = WEEKDAYS_FULL[dow];
+    const comps = new Set(completions[ds]||[]);
+    const dayNotes = notes[ds]||{};
+    const dayTemp = tempTasks[ds]||[];
+
+    // Permanent tasks
+    for (const t of at) {
+      const done = comps.has(t.id);
+      const note = (dayNotes[t.id] || '').replace(/"/g,'""');
+      const status = done ? '已完成' : '未完成';
+      const text = t.text.replace(/"/g,'""');
+      const cat = (t.category||'').replace(/"/g,'""');
+      rows.push(`"${ds}","${dowLabel}","日常","${text}","${cat}","${status}","${note}"`);
+    }
+
+    // Temp tasks
+    for (const t of dayTemp) {
+      const note = (dayNotes[t.id] || '').replace(/"/g,'""');
+      const status = t.done ? '已完成' : '未完成';
+      const text = t.text.replace(/"/g,'""');
+      rows.push(`"${ds}","${dowLabel}","临时","${text}","","${status}","${note}"`);
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  const csv = '\uFEFF' + rows.join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `daily_report_${startStr}_${endStr}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('CSV 已导出');
+}
+
+document.getElementById('export-range-btn').addEventListener('click', exportDateRangeCSV);
 
 // ── Settings: import ──
 elImportBtn.addEventListener('click', () => elImportFile.click());
@@ -1853,6 +2067,7 @@ elImportFile.addEventListener('change', e => {
       if (data.completions) { completions = data.completions; saveCompletions(); }
       if (data.tempTasks) { tempTasks = data.tempTasks; saveTempTasks(); }
       if (data.categories) { categories = data.categories; saveCategories(); }
+      if (data.notes) { notes = data.notes; saveNotes(); }
       if (data.settings) { settings = {...settings, ...data.settings}; saveSettings(); }
       savedDone = new Set(completions[TODAY_STR]||[]);
       pending.clear();
@@ -1877,14 +2092,16 @@ elClearBtn.addEventListener('click', () => {
   localStorage.removeItem(STK_TEMP_TASKS);
   localStorage.removeItem(STK_CATEGORIES);
   localStorage.removeItem(STK_SETTINGS);
+  localStorage.removeItem(STK_NOTES);
   tasks = DEFAULT_TASKS.map(t=>({...t}));
   completions = {};
   tempTasks = {};
+  notes = {};
   categories = [...DEFAULT_CATEGORIES];
   settings = {...DEFAULT_SETTINGS};
   savedDone = new Set();
   pending.clear();
-  saveTasks(); saveCompletions(); saveTempTasks(); saveCategories(); saveSettings();
+  saveTasks(); saveCompletions(); saveTempTasks(); saveCategories(); saveSettings(); saveNotes();
   document.documentElement.setAttribute('data-theme', settings.theme);
   renderToday(); renderManage(); renderSettings();
   showToast('数据已清除');
@@ -1923,12 +2140,13 @@ elBtnClose.addEventListener('click', () => window.close());
       if (data.tempTasks) tempTasks = data.tempTasks;
       if (data.categories) categories = data.categories;
       if (data.settings) settings = { ...DEFAULT_SETTINGS, ...data.settings };
-      // Cache to localStorage
-      localStorage.setItem(STK_TASKS, JSON.stringify(tasks));
-      localStorage.setItem(STK_COMPLETIONS, JSON.stringify(completions));
-      localStorage.setItem(STK_TEMP_TASKS, JSON.stringify(tempTasks));
-      localStorage.setItem(STK_CATEGORIES, JSON.stringify(categories));
-      localStorage.setItem(STK_SETTINGS, JSON.stringify(settings));
+      if (data.notes) { notes = data.notes; localStorage.setItem(STK_NOTES, JSON.stringify(notes)); }
+      // Cache to localStorage (only overwrite what the API actually returned)
+      if (data.tasks) localStorage.setItem(STK_TASKS, JSON.stringify(tasks));
+      if (data.completions) localStorage.setItem(STK_COMPLETIONS, JSON.stringify(completions));
+      if (data.tempTasks) localStorage.setItem(STK_TEMP_TASKS, JSON.stringify(tempTasks));
+      if (data.categories) localStorage.setItem(STK_CATEGORIES, JSON.stringify(categories));
+      if (data.settings) localStorage.setItem(STK_SETTINGS, JSON.stringify(settings));
     }
   }
 
@@ -1967,6 +2185,12 @@ elBtnClose.addEventListener('click', () => window.close());
     }
   }
 
+  if (!Object.keys(notes).length) {
+    const nr = localStorage.getItem(STK_NOTES);
+    if (nr) { try { notes = JSON.parse(nr); } catch(e) {} }
+    if (!Object.keys(notes).length) notes = {};
+  }
+
   if (!Object.keys(settings).length) {
     const setRaw = localStorage.getItem(STK_SETTINGS);
     if (setRaw) { try { settings = JSON.parse(setRaw); } catch(e) { settings={...DEFAULT_SETTINGS}; } }
@@ -1998,19 +2222,6 @@ elBtnClose.addEventListener('click', () => window.close());
   // Render
   renderToday();
   renderSettings();
-
-  // Clean old data
-  const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-90);
-  const cutoffStr = dateKey(cutoff);
-  let cleaned = false;
-  for (const k of Object.keys(completions)) {
-    if (k<cutoffStr) { delete completions[k]; cleaned=true; }
-  }
-  if (cleaned) saveCompletions();
-  for (const k of Object.keys(tempTasks)) {
-    if (k<cutoffStr) { delete tempTasks[k]; cleaned=true; }
-  }
-  if (cleaned) saveTempTasks();
 
   // Clean migration URL
   try {
