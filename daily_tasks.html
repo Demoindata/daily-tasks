@@ -1409,6 +1409,8 @@ function doSave() {
   if (savedDone.size) completions[TODAY_STR] = [...savedDone];
   else delete completions[TODAY_STR];
   saveCompletions();
+  // Also save today's temp tasks
+  saveTempTasks();
   pending.clear();
   renderToday();
   showToast('今日记录已保存');
@@ -2165,10 +2167,29 @@ elBtnClose.addEventListener('click', () => window.close());
     if (data) {
       if (data.tasks) tasks = data.tasks.map(upgradeTask);
       if (data.completions) completions = data.completions;
-      if (data.tempTasks) tempTasks = data.tempTasks;
+      if (data.tempTasks) {
+        // Merge: keep local today's temp tasks, supplement API for other days
+        const localTT = localStorage.getItem(STK_TEMP_TASKS);
+        if (localTT) {
+          try {
+            const parsed = JSON.parse(localTT);
+            tempTasks = { ...data.tempTasks, ...parsed };
+          } catch(e) { tempTasks = data.tempTasks; }
+        } else { tempTasks = data.tempTasks; }
+      }
       if (data.categories) categories = data.categories;
       if (data.settings) settings = { ...DEFAULT_SETTINGS, ...data.settings };
-      if (data.notes) { notes = data.notes; localStorage.setItem(STK_NOTES, JSON.stringify(notes)); }
+      if (data.notes) {
+        // Merge: keep local notes, supplement with API
+        const localNotes = localStorage.getItem(STK_NOTES);
+        if (localNotes) {
+          try {
+            const parsed = JSON.parse(localNotes);
+            notes = { ...data.notes, ...parsed };
+          } catch(e) { notes = data.notes; }
+        } else { notes = data.notes; }
+        localStorage.setItem(STK_NOTES, JSON.stringify(notes));
+      }
       // Cache to localStorage (only overwrite what the API actually returned)
       if (data.tasks) localStorage.setItem(STK_TASKS, JSON.stringify(tasks));
       if (data.completions) localStorage.setItem(STK_COMPLETIONS, JSON.stringify(completions));
