@@ -42,9 +42,30 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/api/data':
             length = int(self.headers.get('Content-Length', 0))
             body = self.rfile.read(length).decode('utf-8')
-            data = json.loads(body)
+            incoming = json.loads(body)
+
+            # Merge with existing backup (don't overwrite fields the client didn't send)
+            existing = {}
+            if os.path.exists(DATA_FILE):
+                try:
+                    with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                        existing = json.load(f)
+                except:
+                    existing = {}
+
+            # Start with existing, overlay incoming for top-level keys
+            merged = {}
+            for key in ['tasks', 'completions', 'categories', 'settings']:
+                merged[key] = incoming.get(key, existing.get(key))
+
+            # For per-day data (tempTasks, notes): deep-merge at the date level
+            for key in ['tempTasks', 'notes']:
+                old_day = existing.get(key, {})
+                new_day = incoming.get(key, {})
+                merged[key] = {**old_day, **new_day}
+
             with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
+                json.dump(merged, f, ensure_ascii=False, indent=2)
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.send_header('Access-Control-Allow-Origin', '*')
